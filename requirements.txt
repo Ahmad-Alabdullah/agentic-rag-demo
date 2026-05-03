@@ -1,0 +1,11 @@
+langchain
+langchain-mistralai
+langchain-ollama
+langchain-chroma
+langgraph
+chromadb
+lxml
+gradio
+pydantic
+python-dotenv
+mistralai
