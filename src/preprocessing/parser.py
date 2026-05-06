@@ -62,19 +62,24 @@ def parse_plenarprotokoll(xml_path: str) -> List[Dict]:
                 "speaker_full": f"{vorname} {nachname}".strip(),
                 "vorname": vorname,
                 "nachname": nachname,
-                "fraktion": fraktion,
+                "fraktion": _clean(fraktion),
                 "rolle": rolle,
                 "session_number": session_number,
                 "session_date": session_date,
                 "wahlperiode": wahlperiode,
-                "top_nr": top_nr,
-                "top_titel": top_titel,
+                "top_nr": _clean(top_nr),
+                "top_titel": _clean(top_titel),
                 "text": text,
                 "source_file": Path(xml_path).name,
             })
 
     print(f"  {Path(xml_path).name}: {len(redebeitraege)} Redebeiträge extrahiert")
     return redebeitraege
+
+
+def _clean(text: str) -> str:
+    """Ersetzt non-breaking spaces und normalisiert Whitespace."""
+    return text.replace("\xa0", " ").strip()
 
 
 def _find_text(el, xpaths: List[str]) -> str:

@@ -8,38 +8,21 @@ from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
-EMBED_MODEL = "bge-m3:latest"
-OLLAMA_BASE = "http://localhost:11434"
-CHROMA_DIR = "./chroma_db"
-COLLECTION_NAME = "bundestag"
-MAX_CHUNK_CHARS = 1500
-CHUNK_OVERLAP_CHARS = 150
+from config import get_settings
+from retrieval.vector_store import get_embeddings
 
-
-def get_embeddings():
-    return OllamaEmbeddings(
-        model=EMBED_MODEL,
-        base_url=OLLAMA_BASE,
-    )
-
-
-def get_vector_store():
-    return Chroma(
-        collection_name=COLLECTION_NAME,
-        embedding_function=get_embeddings(),
-        persist_directory=CHROMA_DIR,
-    )
+_s = get_settings()
 
 
 def _split_long_paragraph(para: str) -> List[str]:
     """Hard-splittet einen Absatz > MAX_CHUNK_CHARS an Wortgrenzen."""
-    if len(para) <= MAX_CHUNK_CHARS:
+    if len(para) <= _s.max_chunk_chars:
         return [para]
     parts = []
-    while len(para) > MAX_CHUNK_CHARS:
-        split_at = para.rfind(" ", 0, MAX_CHUNK_CHARS)
+    while len(para) > _s.max_chunk_chars:
+        split_at = para.rfind(" ", 0, _s.max_chunk_chars)
         if split_at == -1:
-            split_at = MAX_CHUNK_CHARS
+            split_at = _s.max_chunk_chars
         parts.append(para[:split_at].strip())
         para = para[split_at:].strip()
     if para:
@@ -54,7 +37,7 @@ def _split_speech(speech: Dict) -> List[Dict]:
     """
     text = speech["text"]
 
-    if len(text) <= MAX_CHUNK_CHARS:
+    if len(text) <= _s.max_chunk_chars:
         return [{**speech, "chunk_index": 0, "total_chunks": 1}]
 
     # Absätze expandieren — überlange Absätze werden hart gesplittet
@@ -68,25 +51,29 @@ def _split_speech(speech: Dict) -> List[Dict]:
     chunk_index = 0
 
     for para in paragraphs:
-        if len(current_text) + len(para) > MAX_CHUNK_CHARS and current_text:
-            chunks.append({
-                **{k: v for k, v in speech.items() if k != "text"},
-                "text": current_text.strip(),
-                "chunk_index": chunk_index,
-            })
-            # Overlap: letzte CHUNK_OVERLAP_CHARS des vorherigen Chunks übernehmen
-            overlap = current_text[-CHUNK_OVERLAP_CHARS:].lstrip()
+        if len(current_text) + len(para) > _s.max_chunk_chars and current_text:
+            chunks.append(
+                {
+                    **{k: v for k, v in speech.items() if k != "text"},
+                    "text": current_text.strip(),
+                    "chunk_index": chunk_index,
+                }
+            )
+            # Overlap: letzte _s.chunk_overlap_chars des vorherigen Chunks übernehmen
+            overlap = current_text[-_s.chunk_overlap_chars :].lstrip()
             current_text = f"{overlap}\n\n{para}" if overlap else para
             chunk_index += 1
         else:
             current_text = f"{current_text}\n\n{para}" if current_text else para
 
     if current_text.strip():
-        chunks.append({
-            **{k: v for k, v in speech.items() if k != "text"},
-            "text": current_text.strip(),
-            "chunk_index": chunk_index,
-        })
+        chunks.append(
+            {
+                **{k: v for k, v in speech.items() if k != "text"},
+                "text": current_text.strip(),
+                "chunk_index": chunk_index,
+            }
+        )
 
     for chunk in chunks:
         chunk["total_chunks"] = len(chunks)
@@ -136,14 +123,16 @@ def index_speeches(speeches: List[Dict]) -> Chroma:
     vector_store = Chroma.from_documents(
         documents=documents[:batch_size],
         embedding=embeddings,
-        persist_directory=CHROMA_DIR,
-        collection_name=COLLECTION_NAME,
+        persist_directory=_s.chroma_dir,
+        collection_name=_s.chroma_collection,
     )
 
     for i in range(batch_size, len(documents), batch_size):
-        batch = documents[i: i + batch_size]
+        batch = documents[i : i + batch_size]
         vector_store.add_documents(batch)
-        print(f"  {min(i + batch_size, len(documents))}/{len(documents)} Chunks indexiert")
+        print(
+            f"  {min(i + batch_size, len(documents))}/{len(documents)} Chunks indexiert"
+        )
 
     print(f"Indexing abgeschlossen. {len(documents)} Chunks im Vector Store.")
     return vector_store

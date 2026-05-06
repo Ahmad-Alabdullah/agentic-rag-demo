@@ -1,7 +1,11 @@
-from dotenv import load_dotenv
-from src.parser import parse_all_protocols
-from src.indexer import index_speeches
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from dotenv import load_dotenv
+from preprocessing.parser import parse_all_protocols
+from preprocessing.indexer import index_speeches
 
 load_dotenv()
 

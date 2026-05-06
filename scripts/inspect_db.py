@@ -1,14 +1,19 @@
-import chromadb
+import sys
+from pathlib import Path
 
-CHROMA_DIR = "./chroma_db"
-COLLECTION_NAME = "bundestag"
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+import chromadb
+from config import get_settings
+
+_s = get_settings()
 
 
 def main():
-    client = chromadb.PersistentClient(path=CHROMA_DIR)
-    col = client.get_collection(COLLECTION_NAME)
+    client = chromadb.PersistentClient(path=_s.chroma_dir)
+    col = client.get_collection(_s.chroma_collection)
 
-    print(f"=== ChromaDB Inspektion: '{COLLECTION_NAME}' ===")
+    print(f"=== ChromaDB Inspektion: '{_s.chroma_collection}' ===")
     print(f"Gesamt Chunks: {col.count()}\n")
 
     result = col.get(limit=1, include=["metadatas"])
