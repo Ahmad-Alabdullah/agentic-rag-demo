@@ -14,12 +14,14 @@ def _format_sources(sources: list) -> str:
     lines = ["\n\n---\n### 📎 Verwendete Quellen\n"]
     for src in sources:
         speaker = src["speaker"]
+        # Optionale Felder nur einbauen wenn vorhanden, sonst leerer String
         fraktion = f" ({src['fraktion']})" if src["fraktion"] else ""
         session = src["session"]
         date = f", {src['date']}" if src["date"] else ""
         top = f"\n   *{src['top']}*" if src["top"] else ""
         preview = src["text_preview"]
 
+        # Jede Quelle als Markdown-Block: fette Überschrift + Blockzitat für den Textausschnitt
         lines.append(
             f"**[{src['nr']}] {speaker}{fraktion}**  "
             f"Sitzung {session}{date}{top}\n"
@@ -36,6 +38,7 @@ def _format_filters(filters: dict) -> str:
 
     parts = []
     if filters.get("speaker_lastname"):
+        # Vor- und Nachname zusammensetzen; Vorname kann leer sein
         name = filters.get("speaker_firstname", "")
         name += f" {filters['speaker_lastname']}"
         parts.append(f"👤 Sprecher: {name.strip()}")
@@ -47,6 +50,7 @@ def _format_filters(filters: dict) -> str:
     if not parts:
         return ""
 
+    # Als eingerücktes Blockzitat dargestellt, damit es sich optisch von der Antwort abhebt
     return "\n> 🔍 Erkannte Filter: " + " | ".join(parts) + "\n"
 
 
@@ -55,10 +59,13 @@ def chat(message: str, history: list):
     Hauptfunktion für den Gradio-Chat.
     Verwendet das Gradio-6-Nachrichtenformat: Liste von {role, content}-Dicts.
     """
+    # Leere Eingaben sofort ignorieren, ohne den LangGraph-Workflow zu starten
     if not message.strip():
         yield history, ""
         return
 
+    # Sofort einen Lade-Zustand in den Chat einfügen und yielden, damit der Nutzer
+    # sieht, dass die Anfrage verarbeitet wird (Streaming-Pattern ohne echtes Streaming)
     history = history + [
         {"role": "user", "content": message},
         {"role": "assistant", "content": "⏳ Suche in den Protokollen..."},
@@ -66,8 +73,13 @@ def chat(message: str, history: list):
     yield history, ""
 
     try:
+        # Blockierender LangGraph-Aufruf (extract_filters → retrieve → synthesize)
         result = run_query(message)
 
+        # Antwort aus drei optionalen Teilen zusammensetzen:
+        # 1. Filter-Info-Box (wenn Filter erkannt wurden)
+        # 2. Eigentliche LLM-Antwort
+        # 3. Quellen-Block
         filters_info = _format_filters(result["filters"])
         sources_text = _format_sources(result["sources"])
 
@@ -78,6 +90,7 @@ def chat(message: str, history: list):
         if sources_text:
             full_response += sources_text
 
+        # Den vorläufigen Lade-Text im letzten History-Eintrag durch die echte Antwort ersetzen
         history[-1]["content"] = full_response
 
     except Exception as e:
@@ -104,19 +117,22 @@ def create_ui():
         gr.Markdown("""
         # 🏛️ Bundestags-Chatbot
         Stelle Fragen zu Plenarprotokollen des Deutschen Bundestags.
-        
+
         **Tipp:** Du kannst nach bestimmten Sprechern, Sitzungen oder Themen fragen.
         """)
 
+        # Zweispaltiges Layout: breiter Chat-Bereich (scale=3) + schmale Info-Sidebar (scale=1)
         with gr.Row():
             with gr.Column(scale=3):
                 chatbot = gr.Chatbot(
                     value=[],
                     elem_classes=["chatbot-container"],
                     show_label=False,
-                    render_markdown=True,
+                    render_markdown=True,  # Markdown in Antworten aktivieren
                 )
 
+                # Eingabezeile: Textfeld nimmt den Großteil der Breite ein (scale=5),
+                # Senden-Button ist kompakter (scale=1)
                 with gr.Row():
                     msg_input = gr.Textbox(
                         placeholder="Stelle eine Frage zu den Protokollen...",
@@ -130,6 +146,7 @@ def create_ui():
                         scale=1,
                     )
 
+                # Beispiel-Fragen befüllen das Textfeld per Klick — kein automatisches Absenden
                 gr.Examples(
                     examples=example_questions,
                     inputs=msg_input,
@@ -139,11 +156,11 @@ def create_ui():
             with gr.Column(scale=1):
                 gr.Markdown("### ℹ️ Informationen")
                 gr.Markdown("""
-                **Modell:** Mistral Small 4  
-                **Embeddings:** bge-m3 (lokal)  
-                **Vector Store:** Chroma  
-                **Framework:** LangGraph  
-                
+                **Modell:** Mistral Small 4
+                **Embeddings:** bge-m3 (lokal)
+                **Vector Store:** Chroma
+                **Framework:** LangGraph
+
                 **Unterstützte Filter:**
                 - 👤 Sprecher (Name)
                 - 🏛️ Fraktion (SPD, CDU/CSU, ...)
@@ -152,7 +169,8 @@ def create_ui():
 
                 clear_btn = gr.Button("🗑️ Chat leeren", variant="secondary")
 
-        # Event Handler
+        # Event Handler: Button-Klick und Enter-Taste lösen denselben chat()-Generator aus.
+        # outputs=[chatbot, msg_input] leert das Textfeld nach dem Absenden (chat() yieldet "").
         submit_btn.click(
             fn=chat,
             inputs=[msg_input, chatbot],
@@ -163,6 +181,7 @@ def create_ui():
             inputs=[msg_input, chatbot],
             outputs=[chatbot, msg_input],
         )
+        # Chat leeren setzt History auf [] und Textfeld auf "" zurück
         clear_btn.click(
             fn=lambda: ([], ""),
             outputs=[chatbot, msg_input],
